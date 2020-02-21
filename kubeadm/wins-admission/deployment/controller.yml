@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wins-controller
+  labels:
+    app: wins-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wins-controller
+  template:
+    metadata:
+      labels:
+        app: wins-controller
+    spec:
+      containers:
+      - name: wins-controller
+        image: sigwindowstools/wins-admission-controller:latest
+        imagePullPolicy: Always
+        args:
+          - -tlsCertFile=/etc/webhook/certs/cert.pem
+          - -tlsKeyFile=/etc/webhook/certs/key.pem
+          - -port=8443
+          - -alsologtostderr
+          - -v=4
+          - 2>&1
+        volumeMounts:
+        - name: wins-certs
+          mountPath: /etc/webhook/certs
+          readOnly: true
+      volumes:
+      - name: wins-certs
+        secret:
+          secretName: wins-certs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wins-admission
+  labels:
+    app: wins-admission
+spec:
+  ports:
+  - port: 443
+    targetPort: 8443
+  selector:
+    app: wins-controller
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: wins-validation-webhook-cfg
+webhooks:
+- name: wins-validation-webhook.kubernetes.io
+  clientConfig:
+    service:
+      name: wins-admission
+      namespace: wins-system
+      path: "/validate"
+    caBundle: ${CA_BUNDLE}
+  rules:
+  - operations: ["CREATE", "UPDATE"]
+    apiGroups: ["apps", ""]
+    apiVersions: ["v1"]
+    resources: ["deployments", "pods"]
